@@ -17,12 +17,54 @@
         <a href="#gaming" class="nav-link" onclick="showSection('gaming')">🎮 Gaming</a>
         <a href="#software" class="nav-link" onclick="showSection('software')">💻 Software</a>
         <a href="#feedback" class="nav-link" onclick="showSection('feedback')">💬 Feedback</a>
+        <div id="auth-buttons">
+          <button class="btn-login" onclick="showSection('login')">Login</button>
+          <button class="btn-signup" onclick="showSection('signup')">Registrati</button>
+        </div>
+        <div id="user-menu" style="display:none;">
+          <span class="user-name" id="user-display"></span>
+          <button class="btn-logout" onclick="logout()">Logout</button>
+        </div>
         <button class="btn-add" onclick="openModal()">+ Aggiungi</button>
       </div>
     </div>
   </nav>
 
   <main class="container-main">
+    <!-- Login Section -->
+    <section id="login" class="section auth-section">
+      <div class="auth-container">
+        <div class="auth-card">
+          <h2>Login</h2>
+          <form id="login-form">
+            <input type="text" id="login-username" placeholder="Username" required>
+            <input type="password" id="login-password" placeholder="Password" required>
+            <button type="submit" class="btn-submit">Accedi</button>
+            <div id="login-error" class="auth-error"></div>
+          </form>
+          <p class="auth-link">Non hai un account? <a href="#signup" onclick="showSection('signup')">Registrati</a></p>
+        </div>
+      </div>
+    </section>
+
+    <!-- Signup Section -->
+    <section id="signup" class="section auth-section">
+      <div class="auth-container">
+        <div class="auth-card">
+          <h2>Registrati</h2>
+          <form id="signup-form">
+            <input type="text" id="signup-username" placeholder="Username" required>
+            <input type="email" id="signup-email" placeholder="Email" required>
+            <input type="password" id="signup-password" placeholder="Password (min 6 caratteri)" required>
+            <input type="password" id="signup-confirm" placeholder="Conferma Password" required>
+            <button type="submit" class="btn-submit">Crea Account</button>
+            <div id="signup-error" class="auth-error"></div>
+          </form>
+          <p class="auth-link">Hai già un account? <a href="#login" onclick="showSection('login')">Login</a></p>
+        </div>
+      </div>
+    </section>
+
     <!-- Home Section -->
     <section id="home" class="section active">
       <div class="hero">
@@ -75,7 +117,6 @@
         </div>
         
         <div class="feedback-container">
-          <!-- Form Feedback -->
           <div class="feedback-form-wrapper">
             <h3>Invia un Messaggio</h3>
             <form id="feedback-form" class="feedback-form">
@@ -87,7 +128,6 @@
             </form>
           </div>
 
-          <!-- Commenti -->
           <div class="feedback-comments-wrapper">
             <h3>Commenti Recenti</h3>
             <div id="feedback-list" class="feedback-list"></div>
