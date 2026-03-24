@@ -10,3 +10,7 @@ services:
         value: production
       - key: PORT
         value: 10000
+    disks:
+      - name: data
+        mountPath: /app/data
+        sizeGB: 1
