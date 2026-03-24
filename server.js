@@ -8,6 +8,10 @@ const crypto = require('crypto');
 const app = express();
 const PORT = 3000;
 
+// ADMIN PASSWORD (cambia questo!)
+const ADMIN_PASSWORD = 'admin123';
+const ADMIN_USERNAME = 'admin';
+
 // Middleware
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
@@ -156,6 +160,21 @@ app.post('/api/auth/login', (req, res) => {
       return;
     }
 
+    // Controlla se è admin
+    if (username === ADMIN_USERNAME && password === ADMIN_PASSWORD) {
+      const token = crypto.randomBytes(32).toString('hex');
+      console.log('Admin login successful');
+      res.json({ 
+        id: 0, 
+        username: ADMIN_USERNAME, 
+        email: 'admin@gicsy hub.local',
+        token: token,
+        isAdmin: true,
+        message: 'Login admin completato!' 
+      });
+      return;
+    }
+
     const hashedPassword = hashPassword(password);
 
     db.get(
@@ -173,7 +192,6 @@ app.post('/api/auth/login', (req, res) => {
           return;
         }
 
-        // Crea token semplice (in produzione usare JWT)
         const token = crypto.randomBytes(32).toString('hex');
         console.log('Login successful:', username);
         res.json({ 
@@ -181,6 +199,7 @@ app.post('/api/auth/login', (req, res) => {
           username: row.username, 
           email: row.email,
           token: token,
+          isAdmin: false,
           message: 'Login completato!' 
         });
       }
@@ -191,26 +210,59 @@ app.post('/api/auth/login', (req, res) => {
   }
 });
 
-app.post('/api/auth/verify', (req, res) => {
-  const { username, token } = req.body;
-  
-  if (!username || !token) {
-    res.status(401).json({ authenticated: false });
+// ===== ADMIN ROUTES =====
+app.get('/api/admin/users', (req, res) => {
+  const { username, isAdmin } = req.query;
+
+  if (username !== ADMIN_USERNAME || isAdmin !== 'true') {
+    res.status(403).json({ error: 'Accesso negato' });
     return;
   }
 
-  // Verifica semplice - in produzione usare JWT
-  db.get(
-    'SELECT id, username, email FROM users WHERE username = ?',
-    [username],
-    (err, row) => {
-      if (err || !row) {
-        res.status(401).json({ authenticated: false });
+  db.all(
+    'SELECT id, username, email, createdAt FROM users ORDER BY createdAt DESC',
+    (err, rows) => {
+      if (err) {
+        console.error('Query admin/users error:', err);
+        res.status(500).json({ error: err.message });
         return;
       }
-      res.json({ authenticated: true, user: row });
+      res.json(rows || []);
     }
   );
+});
+
+app.get('/api/admin/stats', (req, res) => {
+  const { username, isAdmin } = req.query;
+
+  if (username !== ADMIN_USERNAME || isAdmin !== 'true') {
+    res.status(403).json({ error: 'Accesso negato' });
+    return;
+  }
+
+  Promise.all([
+    new Promise((resolve, reject) => {
+      db.get('SELECT COUNT(*) as count FROM users', (err, row) => {
+        resolve(err ? 0 : row.count);
+      });
+    }),
+    new Promise((resolve, reject) => {
+      db.get('SELECT COUNT(*) as count FROM apps', (err, row) => {
+        resolve(err ? 0 : row.count);
+      });
+    }),
+    new Promise((resolve, reject) => {
+      db.get('SELECT COUNT(*) as count FROM feedback', (err, row) => {
+        resolve(err ? 0 : row.count);
+      });
+    })
+  ]).then(([usersCount, appsCount, feedbackCount]) => {
+    res.json({
+      totalUsers: usersCount,
+      totalApps: appsCount,
+      totalFeedback: feedbackCount
+    });
+  });
 });
 
 // ===== API APPS =====
@@ -336,6 +388,7 @@ app.use((err, req, res, next) => {
 
 const server = app.listen(PORT, () => {
   console.log(`Server in esecuzione su http://localhost:${PORT}`);
+  console.log(`Admin credentials - Username: ${ADMIN_USERNAME}, Password: ${ADMIN_PASSWORD}`);
 });
 
 process.on('SIGTERM', () => {
