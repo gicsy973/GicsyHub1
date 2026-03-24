@@ -8,10 +8,15 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 function setupEventListeners() {
-  document.getElementById('login-form').addEventListener('submit', handleLogin);
-  document.getElementById('signup-form').addEventListener('submit', handleSignup);
-  document.getElementById('app-form').addEventListener('submit', handleAddApp);
-  document.getElementById('feedback-form').addEventListener('submit', handleFeedback);
+  const loginForm = document.getElementById('login-form');
+  const signupForm = document.getElementById('signup-form');
+  const appForm = document.getElementById('app-form');
+  const feedbackForm = document.getElementById('feedback-form');
+  
+  if (loginForm) loginForm.addEventListener('submit', handleLogin);
+  if (signupForm) signupForm.addEventListener('submit', handleSignup);
+  if (appForm) appForm.addEventListener('submit', handleAddApp);
+  if (feedbackForm) feedbackForm.addEventListener('submit', handleFeedback);
 }
 
 // ===== AUTH =====
@@ -37,13 +42,13 @@ async function handleLogin(e) {
       updateAuthUI();
       showSection('home');
       document.getElementById('login-form').reset();
-      errorDiv.textContent = '';
+      if (errorDiv) errorDiv.textContent = '';
     } else {
-      errorDiv.textContent = data.error || 'Errore nel login';
+      if (errorDiv) errorDiv.textContent = data.error || 'Errore nel login';
     }
   } catch (error) {
     console.error('Login error:', error);
-    errorDiv.textContent = 'Errore di connessione';
+    if (errorDiv) errorDiv.textContent = 'Errore di connessione';
   }
 }
 
@@ -65,16 +70,16 @@ async function handleSignup(e) {
     const data = await response.json();
 
     if (response.ok) {
-      errorDiv.textContent = '';
+      if (errorDiv) errorDiv.textContent = '';
       alert('Registrazione completata! Effettua il login.');
       document.getElementById('signup-form').reset();
       showSection('login');
     } else {
-      errorDiv.textContent = data.error || 'Errore nella registrazione';
+      if (errorDiv) errorDiv.textContent = data.error || 'Errore nella registrazione';
     }
   } catch (error) {
     console.error('Signup error:', error);
-    errorDiv.textContent = 'Errore di connessione';
+    if (errorDiv) errorDiv.textContent = 'Errore di connessione';
   }
 }
 
@@ -104,24 +109,24 @@ function updateAuthUI() {
   const adminLink = document.getElementById('admin-link');
 
   if (currentUser) {
-    authButtons.style.display = 'none';
-    userMenu.style.display = 'flex';
-    document.getElementById('user-display').textContent = `👤 ${currentUser.username}`;
+    if (authButtons) authButtons.style.display = 'none';
+    if (userMenu) userMenu.style.display = 'flex';
+    const userDisplay = document.getElementById('user-display');
+    if (userDisplay) userDisplay.textContent = `👤 ${currentUser.username}`;
     
-    // Mostra pulsante e sezione admin solo se admin
     if (currentUser.isAdmin) {
-      addButton.style.display = 'block';
-      adminLink.style.display = 'block';
+      if (addButton) addButton.style.display = 'block';
+      if (adminLink) adminLink.style.display = 'block';
       loadAdminData();
     } else {
-      addButton.style.display = 'none';
-      adminLink.style.display = 'none';
+      if (addButton) addButton.style.display = 'none';
+      if (adminLink) adminLink.style.display = 'none';
     }
   } else {
-    authButtons.style.display = 'flex';
-    userMenu.style.display = 'none';
-    addButton.style.display = 'none';
-    adminLink.style.display = 'none';
+    if (authButtons) authButtons.style.display = 'flex';
+    if (userMenu) userMenu.style.display = 'none';
+    if (addButton) addButton.style.display = 'none';
+    if (adminLink) adminLink.style.display = 'none';
   }
 }
 
@@ -139,9 +144,13 @@ async function loadAdminStats() {
     const response = await fetch(`/api/admin/stats?username=${currentUser.username}&isAdmin=true`);
     const stats = await response.json();
 
-    document.getElementById('stat-users').textContent = stats.totalUsers;
-    document.getElementById('stat-apps').textContent = stats.totalApps;
-    document.getElementById('stat-feedback').textContent = stats.totalFeedback;
+    const statUsers = document.getElementById('stat-users');
+    const statApps = document.getElementById('stat-apps');
+    const statFeedback = document.getElementById('stat-feedback');
+
+    if (statUsers) statUsers.textContent = stats.totalUsers;
+    if (statApps) statApps.textContent = stats.totalApps;
+    if (statFeedback) statFeedback.textContent = stats.totalFeedback;
   } catch (error) {
     console.error('Errore caricamento stats:', error);
   }
@@ -161,6 +170,8 @@ async function loadAdminUsers() {
 
 function renderAdminUsers(users) {
   const tbody = document.getElementById('users-list');
+  if (!tbody) return;
+
   tbody.innerHTML = '';
 
   if (users.length === 0) {
@@ -283,6 +294,8 @@ async function loadApps() {
 
 function renderApps(apps, gridId) {
   const grid = document.getElementById(gridId);
+  if (!grid) return;
+  
   grid.innerHTML = '';
 
   if (apps.length === 0) {
@@ -358,11 +371,13 @@ function openModal() {
     alert('Solo admin possono aggiungere app!');
     return;
   }
-  document.getElementById('modal').classList.add('show');
+  const modal = document.getElementById('modal');
+  if (modal) modal.classList.add('show');
 }
 
 function closeModal() {
-  document.getElementById('modal').classList.remove('show');
+  const modal = document.getElementById('modal');
+  if (modal) modal.classList.remove('show');
 }
 
 // ===== FEEDBACK =====
@@ -386,9 +401,11 @@ async function handleFeedback(e) {
     });
 
     if (response.ok) {
-      statusDiv.textContent = '✓ Feedback inviato con successo! Grazie!';
-      statusDiv.classList.add('success');
-      statusDiv.classList.remove('error');
+      if (statusDiv) {
+        statusDiv.textContent = '✓ Feedback inviato con successo! Grazie!';
+        statusDiv.classList.add('success');
+        statusDiv.classList.remove('error');
+      }
       
       document.getElementById('feedback-form').reset();
       loadFeedback();
@@ -398,20 +415,26 @@ async function handleFeedback(e) {
       }
       
       setTimeout(() => {
-        statusDiv.textContent = '';
-        statusDiv.classList.remove('success');
+        if (statusDiv) {
+          statusDiv.textContent = '';
+          statusDiv.classList.remove('success');
+        }
       }, 4000);
     } else {
       const error = await response.json();
-      statusDiv.textContent = '✗ ' + (error.error || 'Errore nell\'invio');
-      statusDiv.classList.add('error');
-      statusDiv.classList.remove('success');
+      if (statusDiv) {
+        statusDiv.textContent = '✗ ' + (error.error || 'Errore nell\'invio');
+        statusDiv.classList.add('error');
+        statusDiv.classList.remove('success');
+      }
     }
   } catch (error) {
     console.error('Errore:', error);
-    statusDiv.textContent = '✗ Errore di connessione';
-    statusDiv.classList.add('error');
-    statusDiv.classList.remove('success');
+    if (statusDiv) {
+      statusDiv.textContent = '✗ Errore di connessione';
+      statusDiv.classList.add('error');
+      statusDiv.classList.remove('success');
+    }
   }
 }
 
@@ -427,6 +450,8 @@ async function loadFeedback() {
 
 function renderFeedback(feedbacks) {
   const list = document.getElementById('feedback-list');
+  if (!list) return;
+
   list.innerHTML = '';
 
   if (feedbacks.length === 0) {
@@ -461,7 +486,8 @@ function showSection(sectionId) {
     section.classList.remove('active');
   });
 
-  document.getElementById(sectionId).classList.add('active');
+  const section = document.getElementById(sectionId);
+  if (section) section.classList.add('active');
   
   if (sectionId !== 'login' && sectionId !== 'signup') {
     setActiveNavLink(sectionId);
