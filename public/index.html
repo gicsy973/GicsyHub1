@@ -17,6 +17,7 @@
         <a href="#gaming" class="nav-link" onclick="showSection('gaming')">🎮 Gaming</a>
         <a href="#software" class="nav-link" onclick="showSection('software')">💻 Software</a>
         <a href="#feedback" class="nav-link" onclick="showSection('feedback')">💬 Feedback</a>
+        <a href="#admin" class="nav-link" id="admin-link" style="display:none;" onclick="showSection('admin')">⚙️ Admin</a>
         <div id="auth-buttons">
           <button class="btn-login" onclick="showSection('login')">Login</button>
           <button class="btn-signup" onclick="showSection('signup')">Registrati</button>
@@ -131,6 +132,54 @@
           <div class="feedback-comments-wrapper">
             <h3>Commenti Recenti</h3>
             <div id="feedback-list" class="feedback-list"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Admin Section -->
+    <section id="admin" class="section">
+      <div class="container">
+        <div class="section-header">
+          <h2>⚙️ Pannello Admin</h2>
+          <p>Gestisci utenti e applicazioni</p>
+        </div>
+
+        <div class="admin-container">
+          <!-- Stats -->
+          <div class="admin-stats">
+            <div class="stat-card">
+              <div class="stat-number" id="stat-users">0</div>
+              <div class="stat-label">Utenti Registrati</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-number" id="stat-apps">0</div>
+              <div class="stat-label">App Pubblicate</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-number" id="stat-feedback">0</div>
+              <div class="stat-label">Feedback Ricevuti</div>
+            </div>
+          </div>
+
+          <!-- Users Table -->
+          <div class="admin-section">
+            <h3>👥 Utenti Registrati</h3>
+            <div class="users-table-wrapper">
+              <table class="users-table">
+                <thead>
+                  <tr>
+                    <th>Username</th>
+                    <th>Email</th>
+                    <th>Data Registrazione</th>
+                    <th>Azioni</th>
+                  </tr>
+                </thead>
+                <tbody id="users-list">
+                  <tr><td colspan="4" style="text-align:center;">Caricamento...</td></tr>
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
       </div>
