@@ -1,16 +1,127 @@
-// Carica app e feedback al caricamento della pagina
+let currentUser = null;
+
 document.addEventListener('DOMContentLoaded', () => {
   loadApps();
   loadFeedback();
-  setActiveNavLink('home');
+  checkAuth();
+  setupEventListeners();
 });
+
+function setupEventListeners() {
+  document.getElementById('login-form').addEventListener('submit', handleLogin);
+  document.getElementById('signup-form').addEventListener('submit', handleSignup);
+  document.getElementById('app-form').addEventListener('submit', handleAddApp);
+  document.getElementById('feedback-form').addEventListener('submit', handleFeedback);
+}
+
+// ===== AUTH =====
+
+async function handleLogin(e) {
+  e.preventDefault();
+  const username = document.getElementById('login-username').value;
+  const password = document.getElementById('login-password').value;
+  const errorDiv = document.getElementById('login-error');
+
+  try {
+    const response = await fetch('/api/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, password })
+    });
+
+    const data = await response.json();
+
+    if (response.ok) {
+      currentUser = data;
+      localStorage.setItem('user', JSON.stringify(data));
+      updateAuthUI();
+      showSection('home');
+      document.getElementById('login-form').reset();
+      errorDiv.textContent = '';
+    } else {
+      errorDiv.textContent = data.error || 'Errore nel login';
+    }
+  } catch (error) {
+    console.error('Login error:', error);
+    errorDiv.textContent = 'Errore di connessione';
+  }
+}
+
+async function handleSignup(e) {
+  e.preventDefault();
+  const username = document.getElementById('signup-username').value;
+  const email = document.getElementById('signup-email').value;
+  const password = document.getElementById('signup-password').value;
+  const confirmPassword = document.getElementById('signup-confirm').value;
+  const errorDiv = document.getElementById('signup-error');
+
+  try {
+    const response = await fetch('/api/auth/signup', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, email, password, confirmPassword })
+    });
+
+    const data = await response.json();
+
+    if (response.ok) {
+      errorDiv.textContent = '';
+      alert('Registrazione completata! Effettua il login.');
+      document.getElementById('signup-form').reset();
+      showSection('login');
+    } else {
+      errorDiv.textContent = data.error || 'Errore nella registrazione';
+    }
+  } catch (error) {
+    console.error('Signup error:', error);
+    errorDiv.textContent = 'Errore di connessione';
+  }
+}
+
+function logout() {
+  currentUser = null;
+  localStorage.removeItem('user');
+  updateAuthUI();
+  showSection('home');
+}
+
+function checkAuth() {
+  const saved = localStorage.getItem('user');
+  if (saved) {
+    try {
+      currentUser = JSON.parse(saved);
+      updateAuthUI();
+    } catch (e) {
+      localStorage.removeItem('user');
+    }
+  }
+}
+
+function updateAuthUI() {
+  const authButtons = document.getElementById('auth-buttons');
+  const userMenu = document.getElementById('user-menu');
+
+  if (currentUser) {
+    authButtons.style.display = 'none';
+    userMenu.style.display = 'flex';
+    document.getElementById('user-display').textContent = `👤 ${currentUser.username}`;
+  } else {
+    authButtons.style.display = 'flex';
+    userMenu.style.display = 'none';
+  }
+}
 
 // ===== APPS =====
 
-// Form submission per app
-document.getElementById('app-form').addEventListener('submit', async (e) => {
+async function handleAddApp(e) {
   e.preventDefault();
   
+  if (!currentUser) {
+    alert('Devi effettuare il login per aggiungere app!');
+    showSection('login');
+    return;
+  }
+
   const app = {
     name: document.getElementById('name').value,
     type: document.getElementById('type').value,
@@ -38,7 +149,7 @@ document.getElementById('app-form').addEventListener('submit', async (e) => {
     console.error('Errore:', error);
     alert('Errore di connessione');
   }
-});
+}
 
 async function loadApps() {
   try {
@@ -67,6 +178,18 @@ function renderApps(apps, gridId) {
   apps.forEach(app => {
     const card = document.createElement('div');
     card.className = 'app-card';
+    
+    let downloadButton = '';
+    if (app.downloadUrl) {
+      if (currentUser) {
+        downloadButton = `<a href="${app.downloadUrl}" target="_blank" class="btn-download">⬇️ Scarica</a>`;
+      } else {
+        downloadButton = `<button class="btn-download" onclick="loginPrompt()">⬇️ Scarica (Login)</button>`;
+      }
+    } else {
+      downloadButton = '<button class="btn-download" disabled>⬇️ Link</button>';
+    }
+
     card.innerHTML = `
       <div class="app-image">
         ${app.imageUrl ? `<img src="${app.imageUrl}" alt="${app.name}">` : (app.type === 'Gioco' ? '🎮' : '💻')}
@@ -77,8 +200,8 @@ function renderApps(apps, gridId) {
         <p>${app.description || 'Nessuna descrizione'}</p>
         ${app.version ? `<div class="app-version">v${app.version}</div>` : ''}
         <div class="app-actions">
-          ${app.downloadUrl ? `<a href="${app.downloadUrl}" target="_blank" class="btn-download">⬇️ Scarica</a>` : '<button class="btn-download" disabled>⬇️ Link</button>'}
-          <button class="btn-delete" onclick="deleteApp(${app.id})">🗑️ Elimina</button>
+          ${downloadButton}
+          ${currentUser ? `<button class="btn-delete" onclick="deleteApp(${app.id})">🗑️ Elimina</button>` : ''}
         </div>
       </div>
     `;
@@ -86,7 +209,17 @@ function renderApps(apps, gridId) {
   });
 }
 
+function loginPrompt() {
+  alert('Devi effettuare il login per scaricare!');
+  showSection('login');
+}
+
 async function deleteApp(id) {
+  if (!currentUser) {
+    alert('Devi effettuare il login!');
+    return;
+  }
+
   if (confirm('Sei sicuro di voler eliminare questo progetto?')) {
     try {
       const response = await fetch(`/api/apps/${id}`, { method: 'DELETE' });
@@ -100,6 +233,11 @@ async function deleteApp(id) {
 }
 
 function openModal() {
+  if (!currentUser) {
+    alert('Devi effettuare il login per aggiungere app!');
+    showSection('login');
+    return;
+  }
   document.getElementById('modal').classList.add('show');
 }
 
@@ -109,8 +247,7 @@ function closeModal() {
 
 // ===== FEEDBACK =====
 
-// Form submission per feedback
-document.getElementById('feedback-form').addEventListener('submit', async (e) => {
+async function handleFeedback(e) {
   e.preventDefault();
   
   const feedbackData = {
@@ -152,7 +289,7 @@ document.getElementById('feedback-form').addEventListener('submit', async (e) =>
     statusDiv.classList.add('error');
     statusDiv.classList.remove('success');
   }
-});
+}
 
 async function loadFeedback() {
   try {
@@ -201,14 +338,18 @@ function showSection(sectionId) {
   });
 
   document.getElementById(sectionId).classList.add('active');
-  setActiveNavLink(sectionId);
+  
+  if (sectionId !== 'login' && sectionId !== 'signup') {
+    setActiveNavLink(sectionId);
+  }
 }
 
 function setActiveNavLink(sectionId) {
   document.querySelectorAll('.nav-link').forEach(link => {
     link.classList.remove('active');
   });
-  document.querySelector(`a[href="#${sectionId}"]`).classList.add('active');
+  const link = document.querySelector(`a[href="#${sectionId}"]`);
+  if (link) link.classList.add('active');
 }
 
 window.onclick = function(event) {
@@ -217,3 +358,4 @@ window.onclick = function(event) {
     closeModal();
   }
 }
+
