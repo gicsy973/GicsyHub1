@@ -11,6 +11,7 @@ const PORT = 3000;
 // ADMIN PASSWORD (cambia questo!)
 const ADMIN_PASSWORD = 'admin123';
 const ADMIN_USERNAME = 'admin';
+const DEFAULT_PASSWORD = 'Password123'; // Password di default per reset
 
 // Middleware
 app.use(bodyParser.json());
@@ -232,6 +233,45 @@ app.get('/api/admin/users', (req, res) => {
   );
 });
 
+app.post('/api/admin/reset-password', (req, res) => {
+  const { username, isAdmin, userId } = req.body;
+
+  if (username !== ADMIN_USERNAME || isAdmin !== 'true') {
+    res.status(403).json({ error: 'Accesso negato' });
+    return;
+  }
+
+  if (!userId) {
+    res.status(400).json({ error: 'ID utente obbligatorio' });
+    return;
+  }
+
+  const hashedPassword = hashPassword(DEFAULT_PASSWORD);
+
+  db.run(
+    'UPDATE users SET password = ? WHERE id = ?',
+    [hashedPassword, userId],
+    function(err) {
+      if (err) {
+        console.error('Reset password error:', err);
+        res.status(500).json({ error: err.message });
+        return;
+      }
+
+      if (this.changes === 0) {
+        res.status(404).json({ error: 'Utente non trovato' });
+        return;
+      }
+
+      console.log('Password resettata per utente ID:', userId);
+      res.json({ 
+        message: `Password resettata a: ${DEFAULT_PASSWORD}`,
+        newPassword: DEFAULT_PASSWORD
+      });
+    }
+  );
+});
+
 app.get('/api/admin/stats', (req, res) => {
   const { username, isAdmin } = req.query;
 
@@ -398,4 +438,3 @@ process.on('SIGTERM', () => {
     process.exit(0);
   });
 });
-
