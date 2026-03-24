@@ -3,6 +3,7 @@ const bodyParser = require('body-parser');
 const sqlite3 = require('sqlite3').verbose();
 const path = require('path');
 const fs = require('fs');
+const crypto = require('crypto');
 
 const app = express();
 const PORT = 3000;
@@ -14,6 +15,11 @@ app.use((req, res, next) => {
   console.log(`${new Date().toISOString()} - ${req.method} ${req.path}`);
   next();
 });
+
+// Funzioni di hashing password
+function hashPassword(password) {
+  return crypto.createHash('sha256').update(password).digest('hex');
+}
 
 // Assicura che la directory dati esista
 const dataDir = '/app/data';
@@ -38,7 +44,24 @@ try {
 
   db.configure('busyTimeout', 5000);
 
-  // Crea tabella apps se non esiste
+  // Crea tabella users
+  db.run(`
+    CREATE TABLE IF NOT EXISTS users (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      username TEXT UNIQUE NOT NULL,
+      email TEXT UNIQUE NOT NULL,
+      password TEXT NOT NULL,
+      createdAt DATETIME DEFAULT CURRENT_TIMESTAMP
+    )
+  `, (err) => {
+    if (err) {
+      console.error('Create users table error:', err);
+    } else {
+      console.log('Tabella users pronta');
+    }
+  });
+
+  // Crea tabella apps
   db.run(`
     CREATE TABLE IF NOT EXISTS apps (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -58,7 +81,7 @@ try {
     }
   });
 
-  // Crea tabella feedback se non esiste
+  // Crea tabella feedback
   db.run(`
     CREATE TABLE IF NOT EXISTS feedback (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -79,6 +102,117 @@ try {
   process.exit(1);
 }
 
+// ===== AUTH ROUTES =====
+app.post('/api/auth/signup', (req, res) => {
+  try {
+    const { username, email, password, confirmPassword } = req.body;
+
+    if (!username || !email || !password || !confirmPassword) {
+      res.status(400).json({ error: 'Tutti i campi sono obbligatori' });
+      return;
+    }
+
+    if (password !== confirmPassword) {
+      res.status(400).json({ error: 'Le password non coincidono' });
+      return;
+    }
+
+    if (password.length < 6) {
+      res.status(400).json({ error: 'La password deve avere almeno 6 caratteri' });
+      return;
+    }
+
+    const hashedPassword = hashPassword(password);
+
+    db.run(
+      'INSERT INTO users (username, email, password) VALUES (?, ?, ?)',
+      [username, email, hashedPassword],
+      function(err) {
+        if (err) {
+          if (err.message.includes('UNIQUE constraint failed')) {
+            res.status(400).json({ error: 'Username o email già registrati' });
+          } else {
+            console.error('Signup error:', err);
+            res.status(500).json({ error: 'Errore nella registrazione' });
+          }
+          return;
+        }
+        console.log('Nuovo utente registrato:', username);
+        res.json({ id: this.lastID, message: 'Registrazione completata! Effettua il login.' });
+      }
+    );
+  } catch (err) {
+    console.error('POST /api/auth/signup exception:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/auth/login', (req, res) => {
+  try {
+    const { username, password } = req.body;
+
+    if (!username || !password) {
+      res.status(400).json({ error: 'Username e password obbligatori' });
+      return;
+    }
+
+    const hashedPassword = hashPassword(password);
+
+    db.get(
+      'SELECT id, username, email FROM users WHERE username = ? AND password = ?',
+      [username, hashedPassword],
+      (err, row) => {
+        if (err) {
+          console.error('Login query error:', err);
+          res.status(500).json({ error: 'Errore nel login' });
+          return;
+        }
+
+        if (!row) {
+          res.status(401).json({ error: 'Username o password errati' });
+          return;
+        }
+
+        // Crea token semplice (in produzione usare JWT)
+        const token = crypto.randomBytes(32).toString('hex');
+        console.log('Login successful:', username);
+        res.json({ 
+          id: row.id, 
+          username: row.username, 
+          email: row.email,
+          token: token,
+          message: 'Login completato!' 
+        });
+      }
+    );
+  } catch (err) {
+    console.error('POST /api/auth/login exception:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/auth/verify', (req, res) => {
+  const { username, token } = req.body;
+  
+  if (!username || !token) {
+    res.status(401).json({ authenticated: false });
+    return;
+  }
+
+  // Verifica semplice - in produzione usare JWT
+  db.get(
+    'SELECT id, username, email FROM users WHERE username = ?',
+    [username],
+    (err, row) => {
+      if (err || !row) {
+        res.status(401).json({ authenticated: false });
+        return;
+      }
+      res.json({ authenticated: true, user: row });
+    }
+  );
+});
+
 // ===== API APPS =====
 app.get('/api/apps', (req, res) => {
   db.all('SELECT * FROM apps ORDER BY createdAt DESC', (err, rows) => {
@@ -87,24 +221,7 @@ app.get('/api/apps', (req, res) => {
       res.status(500).json({ error: err.message });
       return;
     }
-    console.log(`Recuperate ${rows ? rows.length : 0} app`);
     res.json(rows || []);
-  });
-});
-
-app.get('/api/apps/:id', (req, res) => {
-  const { id } = req.params;
-  db.get('SELECT * FROM apps WHERE id = ?', [id], (err, row) => {
-    if (err) {
-      console.error(`Query /api/apps/${id} error:`, err);
-      res.status(500).json({ error: err.message });
-      return;
-    }
-    if (!row) {
-      res.status(404).json({ error: 'App non trovata' });
-      return;
-    }
-    res.json(row);
   });
 });
 
@@ -112,8 +229,6 @@ app.post('/api/apps', (req, res) => {
   try {
     const { name, type, description, version, downloadUrl, imageUrl } = req.body;
     
-    console.log('POST /api/apps:', { name, type });
-
     if (!name || !type) {
       res.status(400).json({ error: 'Nome e tipo sono obbligatori' });
       return;
@@ -128,7 +243,6 @@ app.post('/api/apps', (req, res) => {
           res.status(500).json({ error: err.message });
           return;
         }
-        console.log('App aggiunta con ID:', this.lastID);
         res.json({ id: this.lastID, message: 'App aggiunta con successo' });
       }
     );
@@ -146,7 +260,6 @@ app.delete('/api/apps/:id', (req, res) => {
       res.status(500).json({ error: err.message });
       return;
     }
-    console.log('App eliminata, ID:', id);
     res.json({ message: 'App eliminata' });
   });
 });
@@ -167,14 +280,11 @@ app.post('/api/feedback', (req, res) => {
   try {
     const { name, email, message } = req.body;
     
-    console.log('POST /api/feedback:', { name, email });
-
     if (!name || !email || !message) {
       res.status(400).json({ error: 'Nome, email e messaggio sono obbligatori' });
       return;
     }
 
-    // Validazione email semplice
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(email)) {
       res.status(400).json({ error: 'Email non valida' });
@@ -190,7 +300,6 @@ app.post('/api/feedback', (req, res) => {
           res.status(500).json({ error: err.message });
           return;
         }
-        console.log('Feedback aggiunto con ID:', this.lastID);
         res.json({ id: this.lastID, message: 'Grazie per il tuo feedback!' });
       }
     );
@@ -229,7 +338,6 @@ const server = app.listen(PORT, () => {
   console.log(`Server in esecuzione su http://localhost:${PORT}`);
 });
 
-// Graceful shutdown
 process.on('SIGTERM', () => {
   console.log('SIGTERM ricevuto, chiusura...');
   server.close(() => {
@@ -237,3 +345,4 @@ process.on('SIGTERM', () => {
     process.exit(0);
   });
 });
+
