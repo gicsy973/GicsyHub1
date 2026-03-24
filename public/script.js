@@ -101,22 +101,128 @@ function updateAuthUI() {
   const authButtons = document.getElementById('auth-buttons');
   const userMenu = document.getElementById('user-menu');
   const addButton = document.getElementById('btn-add-app');
+  const adminLink = document.getElementById('admin-link');
 
   if (currentUser) {
     authButtons.style.display = 'none';
     userMenu.style.display = 'flex';
     document.getElementById('user-display').textContent = `👤 ${currentUser.username}`;
     
-    // Mostra pulsante solo se admin
+    // Mostra pulsante e sezione admin solo se admin
     if (currentUser.isAdmin) {
       addButton.style.display = 'block';
+      adminLink.style.display = 'block';
+      loadAdminData();
     } else {
       addButton.style.display = 'none';
+      adminLink.style.display = 'none';
     }
   } else {
     authButtons.style.display = 'flex';
     userMenu.style.display = 'none';
     addButton.style.display = 'none';
+    adminLink.style.display = 'none';
+  }
+}
+
+// ===== ADMIN =====
+
+async function loadAdminData() {
+  loadAdminStats();
+  loadAdminUsers();
+}
+
+async function loadAdminStats() {
+  if (!currentUser || !currentUser.isAdmin) return;
+
+  try {
+    const response = await fetch(`/api/admin/stats?username=${currentUser.username}&isAdmin=true`);
+    const stats = await response.json();
+
+    document.getElementById('stat-users').textContent = stats.totalUsers;
+    document.getElementById('stat-apps').textContent = stats.totalApps;
+    document.getElementById('stat-feedback').textContent = stats.totalFeedback;
+  } catch (error) {
+    console.error('Errore caricamento stats:', error);
+  }
+}
+
+async function loadAdminUsers() {
+  if (!currentUser || !currentUser.isAdmin) return;
+
+  try {
+    const response = await fetch(`/api/admin/users?username=${currentUser.username}&isAdmin=true`);
+    const users = await response.json();
+    renderAdminUsers(users);
+  } catch (error) {
+    console.error('Errore caricamento utenti:', error);
+  }
+}
+
+function renderAdminUsers(users) {
+  const tbody = document.getElementById('users-list');
+  tbody.innerHTML = '';
+
+  if (users.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="4" style="text-align:center; padding: 20px;">Nessun utente registrato</td></tr>';
+    return;
+  }
+
+  users.forEach(user => {
+    const date = new Date(user.createdAt);
+    const dateStr = date.toLocaleDateString('it-IT', {
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+
+    const row = document.createElement('tr');
+    row.innerHTML = `
+      <td>${user.username}</td>
+      <td>${user.email}</td>
+      <td>${dateStr}</td>
+      <td>
+        <button class="btn-reset" onclick="resetUserPassword(${user.id})">🔑 Reset Password</button>
+      </td>
+    `;
+    tbody.appendChild(row);
+  });
+}
+
+async function resetUserPassword(userId) {
+  if (!currentUser || !currentUser.isAdmin) {
+    alert('Solo admin possono resettare password!');
+    return;
+  }
+
+  if (!confirm('Resettare la password di questo utente? La nuova password sarà: Password123')) {
+    return;
+  }
+
+  try {
+    const response = await fetch('/api/admin/reset-password', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        username: currentUser.username,
+        isAdmin: currentUser.isAdmin,
+        userId: userId
+      })
+    });
+
+    const data = await response.json();
+
+    if (response.ok) {
+      alert(`Password resettata!\nNuova password: ${data.newPassword}`);
+      loadAdminUsers();
+    } else {
+      alert(data.error || 'Errore nel reset della password');
+    }
+  } catch (error) {
+    console.error('Errore reset password:', error);
+    alert('Errore di connessione');
   }
 }
 
@@ -150,6 +256,7 @@ async function handleAddApp(e) {
       closeModal();
       document.getElementById('app-form').reset();
       loadApps();
+      loadAdminStats();
     } else {
       alert('Errore nell\'aggiunta del progetto');
     }
@@ -238,6 +345,7 @@ async function deleteApp(id) {
       const response = await fetch(`/api/apps/${id}`, { method: 'DELETE' });
       if (response.ok) {
         loadApps();
+        loadAdminStats();
       }
     } catch (error) {
       console.error('Errore:', error);
@@ -284,6 +392,10 @@ async function handleFeedback(e) {
       
       document.getElementById('feedback-form').reset();
       loadFeedback();
+      
+      if (currentUser && currentUser.isAdmin) {
+        loadAdminStats();
+      }
       
       setTimeout(() => {
         statusDiv.textContent = '';
@@ -354,6 +466,10 @@ function showSection(sectionId) {
   if (sectionId !== 'login' && sectionId !== 'signup') {
     setActiveNavLink(sectionId);
   }
+
+  if (sectionId === 'admin' && currentUser && currentUser.isAdmin) {
+    loadAdminData();
+  }
 }
 
 function setActiveNavLink(sectionId) {
@@ -370,5 +486,3 @@ window.onclick = function(event) {
     closeModal();
   }
 }
-
-
