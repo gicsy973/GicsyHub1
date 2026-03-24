@@ -100,14 +100,23 @@ function checkAuth() {
 function updateAuthUI() {
   const authButtons = document.getElementById('auth-buttons');
   const userMenu = document.getElementById('user-menu');
+  const addButton = document.getElementById('btn-add-app');
 
   if (currentUser) {
     authButtons.style.display = 'none';
     userMenu.style.display = 'flex';
     document.getElementById('user-display').textContent = `👤 ${currentUser.username}`;
+    
+    // Mostra pulsante solo se admin
+    if (currentUser.isAdmin) {
+      addButton.style.display = 'block';
+    } else {
+      addButton.style.display = 'none';
+    }
   } else {
     authButtons.style.display = 'flex';
     userMenu.style.display = 'none';
+    addButton.style.display = 'none';
   }
 }
 
@@ -116,9 +125,8 @@ function updateAuthUI() {
 async function handleAddApp(e) {
   e.preventDefault();
   
-  if (!currentUser) {
-    alert('Devi effettuare il login per aggiungere app!');
-    showSection('login');
+  if (!currentUser || !currentUser.isAdmin) {
+    alert('Solo admin possono aggiungere app!');
     return;
   }
 
@@ -190,6 +198,11 @@ function renderApps(apps, gridId) {
       downloadButton = '<button class="btn-download" disabled>⬇️ Link</button>';
     }
 
+    let deleteButton = '';
+    if (currentUser && currentUser.isAdmin) {
+      deleteButton = `<button class="btn-delete" onclick="deleteApp(${app.id})">🗑️ Elimina</button>`;
+    }
+
     card.innerHTML = `
       <div class="app-image">
         ${app.imageUrl ? `<img src="${app.imageUrl}" alt="${app.name}">` : (app.type === 'Gioco' ? '🎮' : '💻')}
@@ -201,7 +214,7 @@ function renderApps(apps, gridId) {
         ${app.version ? `<div class="app-version">v${app.version}</div>` : ''}
         <div class="app-actions">
           ${downloadButton}
-          ${currentUser ? `<button class="btn-delete" onclick="deleteApp(${app.id})">🗑️ Elimina</button>` : ''}
+          ${deleteButton}
         </div>
       </div>
     `;
@@ -215,8 +228,8 @@ function loginPrompt() {
 }
 
 async function deleteApp(id) {
-  if (!currentUser) {
-    alert('Devi effettuare il login!');
+  if (!currentUser || !currentUser.isAdmin) {
+    alert('Solo admin possono eliminare app!');
     return;
   }
 
@@ -233,9 +246,8 @@ async function deleteApp(id) {
 }
 
 function openModal() {
-  if (!currentUser) {
-    alert('Devi effettuare il login per aggiungere app!');
-    showSection('login');
+  if (!currentUser || !currentUser.isAdmin) {
+    alert('Solo admin possono aggiungere app!');
     return;
   }
   document.getElementById('modal').classList.add('show');
@@ -358,4 +370,5 @@ window.onclick = function(event) {
     closeModal();
   }
 }
+
 
