@@ -1,13 +1,26 @@
+version: '3.8'
+
 services:
-  app:
-    build: .
+  gicsyhub:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: gicsyhub-app
     ports:
-      - "8080:3000"
-    volumes:
-      - app-data:/app/data
+      - "3000:3000"
     environment:
       - NODE_ENV=production
+      - PORT=3000
+      - JWT_SECRET=${JWT_SECRET:-change-me-in-production}
+      - JWT_EXPIRY=30d
+      - DB_PATH=/app/data/catalog.db
+      - ADMIN_USERNAME=admin
+      - ADMIN_PASSWORD=admin123
+      - DEFAULT_API_KEY=${DEFAULT_API_KEY:-dev-api-key-change-in-production}
+    volumes:
+      - gicsyhub-data:/app/data
+      - /app/node_modules
     restart: unless-stopped
 
 volumes:
-  app-data:
+  gicsyhub-data:

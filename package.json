@@ -1,7 +1,7 @@
 {
-  "name": "app-catalog",
-  "version": "1.0.0",
-  "description": "Catalog for PC software and games",
+  "name": "gicsyhub-integrated",
+  "version": "2.0.0",
+  "description": "GicsyHub - App Hub with Android License Verification",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
@@ -10,9 +10,14 @@
   "dependencies": {
     "express": "^4.18.2",
     "body-parser": "^1.20.2",
-    "sqlite3": "^5.1.6"
+    "sqlite3": "^5.1.6",
+    "jsonwebtoken": "^9.0.2",
+    "dotenv": "^16.3.1"
   },
   "devDependencies": {
     "nodemon": "^3.0.1"
+  },
+  "engines": {
+    "node": ">=16.0.0"
   }
 }
