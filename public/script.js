@@ -5,6 +5,7 @@ document.addEventListener('DOMContentLoaded', () => {
   loadFeedback();
   checkAuth();
   setupEventListeners();
+  loadAppsForSelects();
 });
 
 function setupEventListeners() {
@@ -13,12 +14,14 @@ function setupEventListeners() {
   const appForm = document.getElementById('app-form');
   const feedbackForm = document.getElementById('feedback-form');
   const licenseForm = document.getElementById('activate-license-form');
+  const couponForm = document.getElementById('generate-coupon-form');
   
   if (loginForm) loginForm.addEventListener('submit', handleLogin);
   if (signupForm) signupForm.addEventListener('submit', handleSignup);
   if (appForm) appForm.addEventListener('submit', handleAddApp);
   if (feedbackForm) feedbackForm.addEventListener('submit', handleFeedback);
   if (licenseForm) licenseForm.addEventListener('submit', handleActivateLicense);
+  if (couponForm) couponForm.addEventListener('submit', handleGenerateCoupons);
 }
 
 // ===== AUTH =====
@@ -132,7 +135,147 @@ function updateAuthUI() {
   }
 }
 
-// ===== ADMIN ANDROID LICENSES =====
+// ===== LOAD APPS FOR SELECTS =====
+
+async function loadAppsForSelects() {
+  try {
+    const response = await fetch('/api/apps');
+    const apps = await response.json();
+    
+    const couponSelect = document.getElementById('coupon-app-id');
+    const licenseSelect = document.getElementById('license-app-id');
+    
+    if (couponSelect) {
+      couponSelect.innerHTML = '<option value="">Seleziona App</option>';
+      apps.forEach(app => {
+        const option = document.createElement('option');
+        option.value = app.id;
+        option.textContent = app.name;
+        couponSelect.appendChild(option);
+      });
+    }
+    
+    if (licenseSelect) {
+      licenseSelect.innerHTML = '<option value="">Seleziona App</option>';
+      apps.forEach(app => {
+        const option = document.createElement('option');
+        option.value = app.id;
+        option.textContent = app.name;
+        licenseSelect.appendChild(option);
+      });
+    }
+  } catch (error) {
+    console.error('Errore caricamento app:', error);
+  }
+}
+
+// ===== COUPON MANAGEMENT =====
+
+async function handleGenerateCoupons(e) {
+  e.preventDefault();
+
+  if (!currentUser || !currentUser.isAdmin) {
+    alert('Solo admin possono generare coupon!');
+    return;
+  }
+
+  const app_id = parseInt(document.getElementById('coupon-app-id').value);
+  const count = parseInt(document.getElementById('coupon-count').value) || 5;
+  const days_valid = parseInt(document.getElementById('coupon-days').value) || 365;
+  const statusDiv = document.getElementById('coupon-status');
+
+  if (!app_id) {
+    if (statusDiv) {
+      statusDiv.textContent = '✗ Seleziona un\'app';
+      statusDiv.classList.add('error');
+    }
+    return;
+  }
+
+  try {
+    const response = await fetch(`/api/admin/generate-coupons?username=${currentUser.username}&isAdmin=true`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ app_id, count, days_valid })
+    });
+
+    const data = await response.json();
+
+    if (response.ok) {
+      if (statusDiv) {
+        statusDiv.textContent = `✓ ${count} coupon generati! Codici: ${data.coupons.join(', ')}`;
+        statusDiv.classList.add('success');
+        statusDiv.classList.remove('error');
+      }
+      document.getElementById('generate-coupon-form').reset();
+      loadCoupons();
+
+      setTimeout(() => {
+        if (statusDiv) {
+          statusDiv.textContent = '';
+          statusDiv.classList.remove('success');
+        }
+      }, 5000);
+    } else {
+      if (statusDiv) {
+        statusDiv.textContent = '✗ Errore nella generazione';
+        statusDiv.classList.add('error');
+        statusDiv.classList.remove('success');
+      }
+    }
+  } catch (error) {
+    console.error('Generate coupon error:', error);
+    if (statusDiv) {
+      statusDiv.textContent = '✗ Errore di connessione';
+      statusDiv.classList.add('error');
+      statusDiv.classList.remove('success');
+    }
+  }
+}
+
+async function loadCoupons() {
+  if (!currentUser || !currentUser.isAdmin) return;
+
+  try {
+    const response = await fetch(`/api/android/coupons?username=${currentUser.username}&isAdmin=true`);
+
+    if (response.ok) {
+      const coupons = await response.json();
+      renderCoupons(coupons);
+    }
+  } catch (error) {
+    console.error('Errore caricamento coupon:', error);
+  }
+}
+
+function renderCoupons(coupons) {
+  const tbody = document.getElementById('coupons-list');
+  if (!tbody) return;
+
+  tbody.innerHTML = '';
+
+  if (!coupons || coupons.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="5" style="text-align:center; padding: 20px;">Nessun coupon generato</td></tr>';
+    return;
+  }
+
+  coupons.forEach(coupon => {
+    const statusBadge = coupon.is_used ? `✅ Usato (${coupon.used_by_email})` : '🔓 Disponibile';
+    const createdAt = new Date(coupon.created_at).toLocaleDateString('it-IT');
+
+    const row = document.createElement('tr');
+    row.innerHTML = `
+      <td>${coupon.app_name || '-'}</td>
+      <td style="font-weight: bold;">${coupon.coupon_code}</td>
+      <td>${statusBadge}</td>
+      <td>${coupon.used_by_email || '-'}</td>
+      <td>${createdAt}</td>
+    `;
+    tbody.appendChild(row);
+  });
+}
+
+// ===== LICENSE MANAGEMENT =====
 
 async function handleActivateLicense(e) {
   e.preventDefault();
@@ -142,16 +285,25 @@ async function handleActivateLicense(e) {
     return;
   }
 
+  const app_id = parseInt(document.getElementById('license-app-id').value);
   const email = document.getElementById('license-email').value;
   const device_id = document.getElementById('license-device-id').value;
   const days_valid = parseInt(document.getElementById('license-days').value) || 365;
   const statusDiv = document.getElementById('license-status');
 
+  if (!app_id) {
+    if (statusDiv) {
+      statusDiv.textContent = '✗ Seleziona un\'app';
+      statusDiv.classList.add('error');
+    }
+    return;
+  }
+
   try {
     const response = await fetch('/api/android/admin/activate-license', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, device_id, days_valid })
+      body: JSON.stringify({ app_id, email, device_id, days_valid })
     });
 
     const data = await response.json();
@@ -198,11 +350,9 @@ async function loadAndroidLicenses() {
     if (response.ok) {
       const licenses = await response.json();
       renderAndroidLicenses(licenses);
-    } else {
-      console.error('Errore caricamento licenze');
     }
   } catch (error) {
-    console.error('Errore:', error);
+    console.error('Errore caricamento licenze:', error);
   }
 }
 
@@ -230,20 +380,20 @@ function renderAndroidLicenses(licenses) {
 
     const row = document.createElement('tr');
     row.innerHTML = `
+      <td>${license.app_name || '-'}</td>
       <td>${license.email}</td>
       <td style="font-size: 11px; word-break: break-all;">${license.device_id}</td>
       <td>${statusBadge}</td>
       <td>${dateStr}</td>
-      <td style="font-size: 11px; word-break: break-all;">${license.license_key || '-'}</td>
       <td>
-        <button class="btn-revoke" onclick="revokeLicense('${license.email}', '${license.device_id}')">🔓 Revoca</button>
+        <button class="btn-revoke" onclick="revokeLicense(${license.app_id}, '${license.email}', '${license.device_id}')">🔓 Revoca</button>
       </td>
     `;
     tbody.appendChild(row);
   });
 }
 
-async function revokeLicense(email, device_id) {
+async function revokeLicense(app_id, email, device_id) {
   if (!currentUser || !currentUser.isAdmin) {
     alert('Solo admin possono revocare licenze!');
     return;
@@ -257,7 +407,7 @@ async function revokeLicense(email, device_id) {
     const response = await fetch(`/api/android/admin/revoke-license?username=${currentUser.username}&isAdmin=true`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, device_id })
+      body: JSON.stringify({ app_id, email, device_id })
     });
 
     if (response.ok) {
@@ -279,6 +429,7 @@ async function loadAdminData() {
   loadAdminStats();
   loadAdminUsers();
   loadAndroidLicenses();
+  loadCoupons();
 }
 
 async function loadAdminStats() {
@@ -413,6 +564,7 @@ async function handleAddApp(e) {
       closeModal();
       document.getElementById('app-form').reset();
       loadApps();
+      loadAppsForSelects();
       loadAdminStats();
     } else {
       alert('Errore nell\'aggiunta del progetto');
@@ -504,6 +656,7 @@ async function deleteApp(id) {
       const response = await fetch(`/api/apps/${id}`, { method: 'DELETE' });
       if (response.ok) {
         loadApps();
+        loadAppsForSelects();
         loadAdminStats();
       }
     } catch (error) {
