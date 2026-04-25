@@ -32,14 +32,14 @@ function hashPassword(password) {
 }
 
 // Assicura che la directory dati esista
-const dataDir = '/app/data';
+const dataDir = process.env.DB_PATH ? path.dirname(process.env.DB_PATH) : '/app/data';
 if (!fs.existsSync(dataDir)) {
   fs.mkdirSync(dataDir, { recursive: true });
   console.log('Directory dati creata:', dataDir);
 }
 
 // Database setup
-const dbPath = path.join(dataDir, 'catalog.db');
+const dbPath = process.env.DB_PATH || path.join(dataDir, 'catalog.db');
 let db;
 
 try {
@@ -63,13 +63,7 @@ try {
       password TEXT NOT NULL,
       createdAt DATETIME DEFAULT CURRENT_TIMESTAMP
     )
-  `, (err) => {
-    if (err) {
-      console.error('Create users table error:', err);
-    } else {
-      console.log('Tabella users pronta');
-    }
-  });
+  `);
 
   // Crea tabella apps
   db.run(`
@@ -83,13 +77,7 @@ try {
       imageUrl TEXT,
       createdAt DATETIME DEFAULT CURRENT_TIMESTAMP
     )
-  `, (err) => {
-    if (err) {
-      console.error('Create apps table error:', err);
-    } else {
-      console.log('Tabella apps pronta');
-    }
-  });
+  `);
 
   // Crea tabella feedback
   db.run(`
@@ -100,34 +88,23 @@ try {
       message TEXT NOT NULL,
       createdAt DATETIME DEFAULT CURRENT_TIMESTAMP
     )
-  `, (err) => {
-    if (err) {
-      console.error('Create feedback table error:', err);
-    } else {
-      console.log('Tabella feedback pronta');
-    }
-  });
+  `);
 
   // Crea tabella per le licenze Android
   db.run(`
     CREATE TABLE IF NOT EXISTS android_licenses (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
-      email TEXT UNIQUE NOT NULL,
+      email TEXT NOT NULL,
       device_id TEXT NOT NULL,
       is_premium BOOLEAN DEFAULT 0,
       license_key TEXT UNIQUE,
       expiration_date DATETIME,
       activation_date DATETIME DEFAULT CURRENT_TIMESTAMP,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(email, device_id)
     )
-  `, (err) => {
-    if (err) {
-      console.error('Create android_licenses table error:', err);
-    } else {
-      console.log('Tabella android_licenses pronta');
-    }
-  });
+  `);
 
   // Crea tabella per API keys
   db.run(`
@@ -139,13 +116,7 @@ try {
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       last_used DATETIME
     )
-  `, (err) => {
-    if (err) {
-      console.error('Create api_keys table error:', err);
-    } else {
-      console.log('Tabella api_keys pronta');
-    }
-  });
+  `);
 
 } catch (err) {
   console.error('Database init error:', err);
@@ -352,11 +323,9 @@ app.post('/api/android/admin/activate-license', validateApiKey, (req, res) => {
     const licenseKey = 'LIC-' + crypto.randomBytes(12).toString('hex').toUpperCase();
 
     db.run(
-      `INSERT INTO android_licenses (email, device_id, is_premium, license_key, expiration_date)
-       VALUES (?, ?, ?, ?, ?)
-       ON CONFLICT(email) DO UPDATE SET
-       is_premium=1, license_key=?, expiration_date=?, updated_at=CURRENT_TIMESTAMP`,
-      [email, device_id, 1, licenseKey, expirationDate.toISOString(), licenseKey, expirationDate.toISOString()],
+      `INSERT OR REPLACE INTO android_licenses (email, device_id, is_premium, license_key, expiration_date, activation_date)
+       VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
+      [email, device_id, 1, licenseKey, expirationDate.toISOString()],
       function(err) {
         if (err) {
           console.error('Activation error:', err);
@@ -381,6 +350,64 @@ app.post('/api/android/admin/activate-license', validateApiKey, (req, res) => {
       message: 'Internal server error'
     });
   }
+});
+
+// GET /api/android/licenses - Get all Android licenses (Admin)
+app.get('/api/android/licenses', (req, res) => {
+  const { username, isAdmin } = req.query;
+
+  if (username !== ADMIN_USERNAME || isAdmin !== 'true') {
+    res.status(403).json({ error: 'Accesso negato' });
+    return;
+  }
+
+  db.all(
+    'SELECT id, email, device_id, is_premium, license_key, expiration_date, activation_date FROM android_licenses ORDER BY created_at DESC',
+    (err, rows) => {
+      if (err) {
+        console.error('Query licenses error:', err);
+        res.status(500).json({ error: err.message });
+        return;
+      }
+      res.json(rows || []);
+    }
+  );
+});
+
+// POST /api/android/admin/revoke-license - Revoke license
+app.post('/api/android/admin/revoke-license', (req, res) => {
+  const { username, isAdmin } = req.query;
+
+  if (username !== ADMIN_USERNAME || isAdmin !== 'true') {
+    res.status(403).json({ error: 'Accesso negato' });
+    return;
+  }
+
+  const { email, device_id } = req.body;
+
+  if (!email || !device_id) {
+    res.status(400).json({ error: 'Email e device_id obbligatori' });
+    return;
+  }
+
+  db.run(
+    'UPDATE android_licenses SET is_premium = 0, updated_at = CURRENT_TIMESTAMP WHERE email = ? AND device_id = ?',
+    [email, device_id],
+    function(err) {
+      if (err) {
+        console.error('Revoke error:', err);
+        res.status(500).json({ error: err.message });
+        return;
+      }
+
+      if (this.changes === 0) {
+        res.status(404).json({ error: 'Licenza non trovata' });
+        return;
+      }
+
+      res.json({ success: true, message: 'Licenza revocata' });
+    }
+  );
 });
 
 // ===== AUTH ROUTES =====
@@ -557,26 +584,32 @@ app.get('/api/admin/stats', (req, res) => {
   }
 
   Promise.all([
-    new Promise((resolve, reject) => {
+    new Promise((resolve) => {
       db.get('SELECT COUNT(*) as count FROM users', (err, row) => {
         resolve(err ? 0 : row.count);
       });
     }),
-    new Promise((resolve, reject) => {
+    new Promise((resolve) => {
       db.get('SELECT COUNT(*) as count FROM apps', (err, row) => {
         resolve(err ? 0 : row.count);
       });
     }),
-    new Promise((resolve, reject) => {
+    new Promise((resolve) => {
       db.get('SELECT COUNT(*) as count FROM feedback', (err, row) => {
         resolve(err ? 0 : row.count);
       });
+    }),
+    new Promise((resolve) => {
+      db.get('SELECT COUNT(*) as count FROM android_licenses WHERE is_premium = 1', (err, row) => {
+        resolve(err ? 0 : row.count);
+      });
     })
-  ]).then(([usersCount, appsCount, feedbackCount]) => {
+  ]).then(([usersCount, appsCount, feedbackCount, licensesCount]) => {
     res.json({
       totalUsers: usersCount,
       totalApps: appsCount,
-      totalFeedback: feedbackCount
+      totalFeedback: feedbackCount,
+      totalAndroidLicenses: licensesCount
     });
   });
 });
@@ -710,10 +743,6 @@ app.use((err, req, res, next) => {
 const server = app.listen(PORT, () => {
   console.log(`Server in esecuzione su http://localhost:${PORT}`);
   console.log(`Admin credentials - Username: ${ADMIN_USERNAME}, Password: ${ADMIN_PASSWORD}`);
-  console.log(`API endpoints disponibili:`);
-  console.log(`  POST /api/android/verify - Verifica licenza Android`);
-  console.log(`  POST /api/android/validate-token - Valida token JWT`);
-  console.log(`  POST /api/android/admin/activate-license - Attiva licenza (admin)`);
 });
 
 process.on('SIGTERM', () => {
