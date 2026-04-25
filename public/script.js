@@ -12,11 +12,13 @@ function setupEventListeners() {
   const signupForm = document.getElementById('signup-form');
   const appForm = document.getElementById('app-form');
   const feedbackForm = document.getElementById('feedback-form');
+  const licenseForm = document.getElementById('activate-license-form');
   
   if (loginForm) loginForm.addEventListener('submit', handleLogin);
   if (signupForm) signupForm.addEventListener('submit', handleSignup);
   if (appForm) appForm.addEventListener('submit', handleAddApp);
   if (feedbackForm) feedbackForm.addEventListener('submit', handleFeedback);
+  if (licenseForm) licenseForm.addEventListener('submit', handleActivateLicense);
 }
 
 // ===== AUTH =====
@@ -130,11 +132,153 @@ function updateAuthUI() {
   }
 }
 
+// ===== ADMIN ANDROID LICENSES =====
+
+async function handleActivateLicense(e) {
+  e.preventDefault();
+
+  if (!currentUser || !currentUser.isAdmin) {
+    alert('Solo admin possono attivare licenze!');
+    return;
+  }
+
+  const email = document.getElementById('license-email').value;
+  const device_id = document.getElementById('license-device-id').value;
+  const days_valid = parseInt(document.getElementById('license-days').value) || 365;
+  const statusDiv = document.getElementById('license-status');
+
+  try {
+    const response = await fetch('/api/android/admin/activate-license', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, device_id, days_valid })
+    });
+
+    const data = await response.json();
+
+    if (response.ok) {
+      if (statusDiv) {
+        statusDiv.textContent = '✓ Licenza attivata con successo!';
+        statusDiv.classList.add('success');
+        statusDiv.classList.remove('error');
+      }
+      document.getElementById('activate-license-form').reset();
+      loadAndroidLicenses();
+      loadAdminStats();
+
+      setTimeout(() => {
+        if (statusDiv) {
+          statusDiv.textContent = '';
+          statusDiv.classList.remove('success');
+        }
+      }, 3000);
+    } else {
+      if (statusDiv) {
+        statusDiv.textContent = '✗ ' + (data.message || 'Errore nell\'attivazione');
+        statusDiv.classList.add('error');
+        statusDiv.classList.remove('success');
+      }
+    }
+  } catch (error) {
+    console.error('License activation error:', error);
+    if (statusDiv) {
+      statusDiv.textContent = '✗ Errore di connessione';
+      statusDiv.classList.add('error');
+      statusDiv.classList.remove('success');
+    }
+  }
+}
+
+async function loadAndroidLicenses() {
+  if (!currentUser || !currentUser.isAdmin) return;
+
+  try {
+    const response = await fetch(`/api/android/licenses?username=${currentUser.username}&isAdmin=true`);
+
+    if (response.ok) {
+      const licenses = await response.json();
+      renderAndroidLicenses(licenses);
+    } else {
+      console.error('Errore caricamento licenze');
+    }
+  } catch (error) {
+    console.error('Errore:', error);
+  }
+}
+
+function renderAndroidLicenses(licenses) {
+  const tbody = document.getElementById('android-licenses-list');
+  if (!tbody) return;
+
+  tbody.innerHTML = '';
+
+  if (!licenses || licenses.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="6" style="text-align:center; padding: 20px;">Nessuna licenza attiva</td></tr>';
+    return;
+  }
+
+  licenses.forEach(license => {
+    const expDate = new Date(license.expiration_date);
+    const isExpired = expDate < new Date();
+    const dateStr = expDate.toLocaleDateString('it-IT', {
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit'
+    });
+
+    const statusBadge = isExpired ? '❌ Scaduta' : '✅ Attiva';
+
+    const row = document.createElement('tr');
+    row.innerHTML = `
+      <td>${license.email}</td>
+      <td style="font-size: 11px; word-break: break-all;">${license.device_id}</td>
+      <td>${statusBadge}</td>
+      <td>${dateStr}</td>
+      <td style="font-size: 11px; word-break: break-all;">${license.license_key || '-'}</td>
+      <td>
+        <button class="btn-revoke" onclick="revokeLicense('${license.email}', '${license.device_id}')">🔓 Revoca</button>
+      </td>
+    `;
+    tbody.appendChild(row);
+  });
+}
+
+async function revokeLicense(email, device_id) {
+  if (!currentUser || !currentUser.isAdmin) {
+    alert('Solo admin possono revocare licenze!');
+    return;
+  }
+
+  if (!confirm('Vuoi revocare questa licenza?')) {
+    return;
+  }
+
+  try {
+    const response = await fetch(`/api/android/admin/revoke-license?username=${currentUser.username}&isAdmin=true`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, device_id })
+    });
+
+    if (response.ok) {
+      alert('Licenza revocata!');
+      loadAndroidLicenses();
+      loadAdminStats();
+    } else {
+      alert('Errore nella revoca della licenza');
+    }
+  } catch (error) {
+    console.error('Errore:', error);
+    alert('Errore di connessione');
+  }
+}
+
 // ===== ADMIN =====
 
 async function loadAdminData() {
   loadAdminStats();
   loadAdminUsers();
+  loadAndroidLicenses();
 }
 
 async function loadAdminStats() {
@@ -147,10 +291,12 @@ async function loadAdminStats() {
     const statUsers = document.getElementById('stat-users');
     const statApps = document.getElementById('stat-apps');
     const statFeedback = document.getElementById('stat-feedback');
+    const statLicenses = document.getElementById('stat-android-licenses');
 
     if (statUsers) statUsers.textContent = stats.totalUsers;
     if (statApps) statApps.textContent = stats.totalApps;
     if (statFeedback) statFeedback.textContent = stats.totalFeedback;
+    if (statLicenses) statLicenses.textContent = stats.totalAndroidLicenses || '0';
   } catch (error) {
     console.error('Errore caricamento stats:', error);
   }

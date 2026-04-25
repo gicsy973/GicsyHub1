@@ -142,7 +142,7 @@
       <div class="container">
         <div class="section-header">
           <h2>⚙️ Pannello Admin</h2>
-          <p>Gestisci utenti e applicazioni</p>
+          <p>Gestisci utenti, app e licenze Android</p>
         </div>
 
         <div class="admin-container">
@@ -159,6 +159,45 @@
             <div class="stat-card">
               <div class="stat-number" id="stat-feedback">0</div>
               <div class="stat-label">Feedback Ricevuti</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-number" id="stat-android-licenses">0</div>
+              <div class="stat-label">Licenze Android</div>
+            </div>
+          </div>
+
+          <!-- Android Licenses Management -->
+          <div class="admin-section">
+            <h3>📱 Gestione Licenze Android</h3>
+            
+            <div class="license-form">
+              <h4>Attiva Licenza Premium</h4>
+              <form id="activate-license-form">
+                <input type="email" id="license-email" placeholder="Email utente" required>
+                <input type="text" id="license-device-id" placeholder="Device ID Android" required>
+                <input type="number" id="license-days" placeholder="Giorni validità" value="365" min="1">
+                <button type="submit" class="btn-submit">Attiva Licenza</button>
+                <div id="license-status" class="feedback-status"></div>
+              </form>
+            </div>
+
+            <div class="users-table-wrapper">
+              <h4>Licenze Attive</h4>
+              <table class="users-table">
+                <thead>
+                  <tr>
+                    <th>Email</th>
+                    <th>Device ID</th>
+                    <th>Status</th>
+                    <th>Scadenza</th>
+                    <th>Chiave Licenza</th>
+                    <th>Azioni</th>
+                  </tr>
+                </thead>
+                <tbody id="android-licenses-list">
+                  <tr><td colspan="6" style="text-align:center;">Caricamento...</td></tr>
+                </tbody>
+              </table>
             </div>
           </div>
 

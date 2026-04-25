@@ -193,8 +193,53 @@ body {
   color: white;
 }
 
+.admin-section h4 {
+  font-size: 18px;
+  margin-bottom: 15px;
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.license-form {
+  background: rgba(0, 0, 0, 0.2);
+  padding: 20px;
+  border-radius: 8px;
+  margin-bottom: 30px;
+}
+
+.license-form form {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr auto;
+  gap: 10px;
+  align-items: flex-end;
+}
+
+.license-form input {
+  padding: 12px;
+  border: 2px solid rgba(255, 255, 255, 0.2);
+  border-radius: 6px;
+  font-size: 14px;
+  background: rgba(255, 255, 255, 0.9);
+  color: #333;
+}
+
+.license-form input:focus {
+  outline: none;
+  border-color: #667eea;
+  box-shadow: 0 0 8px rgba(102, 126, 234, 0.3);
+}
+
+.license-form .btn-submit {
+  margin-top: 0;
+}
+
 .users-table-wrapper {
   overflow-x: auto;
+  margin-bottom: 20px;
+}
+
+.users-table-wrapper h4 {
+  margin-bottom: 15px;
+  color: white;
 }
 
 .users-table {
@@ -215,19 +260,22 @@ body {
   font-weight: 600;
   color: white;
   border-bottom: 2px solid rgba(102, 126, 234, 0.5);
+  font-size: 13px;
 }
 
 .users-table td {
   padding: 15px;
   color: rgba(255, 255, 255, 0.9);
   border-bottom: 1px solid rgba(102, 126, 234, 0.2);
+  font-size: 13px;
 }
 
 .users-table tbody tr:hover {
   background: rgba(102, 126, 234, 0.1);
 }
 
-.btn-reset {
+.btn-reset,
+.btn-revoke {
   background: #ff9800;
   color: white;
   border: none;
@@ -237,10 +285,19 @@ body {
   font-size: 12px;
   font-weight: 600;
   transition: all 0.3s;
+  white-space: nowrap;
+}
+
+.btn-revoke {
+  background: #ff6b6b;
 }
 
 .btn-reset:hover {
   background: #f57c00;
+}
+
+.btn-revoke:hover {
+  background: #ee5a52;
 }
 
 /* Auth Section */
@@ -941,5 +998,9 @@ body {
 
   .users-table-wrapper {
     overflow-x: auto;
+  }
+
+  .license-form form {
+    grid-template-columns: 1fr;
   }
 }
