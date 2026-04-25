@@ -12,11 +12,11 @@ const PORT = 3000;
 // ADMIN PASSWORD (cambia questo!)
 const ADMIN_PASSWORD = 'admin123';
 const ADMIN_USERNAME = 'admin';
-const DEFAULT_PASSWORD = 'Password123'; // Password di default per reset
+const DEFAULT_PASSWORD = 'Password123';
 
 // JWT Configuration
 const JWT_SECRET = process.env.JWT_SECRET || 'your-super-secret-key-change-in-production';
-const JWT_EXPIRY = process.env.JWT_EXPIRY || '30d'; // 30 days default
+const JWT_EXPIRY = process.env.JWT_EXPIRY || '30d';
 
 // Middleware
 app.use(bodyParser.json());
@@ -26,19 +26,16 @@ app.use((req, res, next) => {
   next();
 });
 
-// Funzioni di hashing password
 function hashPassword(password) {
   return crypto.createHash('sha256').update(password).digest('hex');
 }
 
-// Assicura che la directory dati esista
 const dataDir = process.env.DB_PATH ? path.dirname(process.env.DB_PATH) : '/app/data';
 if (!fs.existsSync(dataDir)) {
   fs.mkdirSync(dataDir, { recursive: true });
   console.log('Directory dati creata:', dataDir);
 }
 
-// Database setup
 const dbPath = process.env.DB_PATH || path.join(dataDir, 'catalog.db');
 let db;
 
@@ -54,69 +51,72 @@ try {
 
   db.configure('busyTimeout', 5000);
 
-  // Crea tabella users
-  db.run(`
-    CREATE TABLE IF NOT EXISTS users (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      username TEXT UNIQUE NOT NULL,
-      email TEXT UNIQUE NOT NULL,
-      password TEXT NOT NULL,
-      createdAt DATETIME DEFAULT CURRENT_TIMESTAMP
-    )
-  `);
+  // Tabelle esistenti
+  db.run(`CREATE TABLE IF NOT EXISTS users (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    username TEXT UNIQUE NOT NULL,
+    email TEXT UNIQUE NOT NULL,
+    password TEXT NOT NULL,
+    createdAt DATETIME DEFAULT CURRENT_TIMESTAMP
+  )`);
 
-  // Crea tabella apps
-  db.run(`
-    CREATE TABLE IF NOT EXISTS apps (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      name TEXT NOT NULL,
-      type TEXT NOT NULL,
-      description TEXT,
-      version TEXT,
-      downloadUrl TEXT,
-      imageUrl TEXT,
-      createdAt DATETIME DEFAULT CURRENT_TIMESTAMP
-    )
-  `);
+  db.run(`CREATE TABLE IF NOT EXISTS apps (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    type TEXT NOT NULL,
+    description TEXT,
+    version TEXT,
+    downloadUrl TEXT,
+    imageUrl TEXT,
+    createdAt DATETIME DEFAULT CURRENT_TIMESTAMP
+  )`);
 
-  // Crea tabella feedback
-  db.run(`
-    CREATE TABLE IF NOT EXISTS feedback (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      name TEXT NOT NULL,
-      email TEXT NOT NULL,
-      message TEXT NOT NULL,
-      createdAt DATETIME DEFAULT CURRENT_TIMESTAMP
-    )
-  `);
+  db.run(`CREATE TABLE IF NOT EXISTS feedback (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    email TEXT NOT NULL,
+    message TEXT NOT NULL,
+    createdAt DATETIME DEFAULT CURRENT_TIMESTAMP
+  )`);
 
-  // Crea tabella per le licenze Android
-  db.run(`
-    CREATE TABLE IF NOT EXISTS android_licenses (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      email TEXT NOT NULL,
-      device_id TEXT NOT NULL,
-      is_premium BOOLEAN DEFAULT 0,
-      license_key TEXT UNIQUE,
-      expiration_date DATETIME,
-      activation_date DATETIME DEFAULT CURRENT_TIMESTAMP,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      UNIQUE(email, device_id)
-    )
-  `);
+  // Tabella licenze Android (legato a app)
+  db.run(`CREATE TABLE IF NOT EXISTS android_licenses (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    app_id INTEGER,
+    email TEXT NOT NULL,
+    device_id TEXT NOT NULL,
+    is_premium BOOLEAN DEFAULT 0,
+    license_key TEXT UNIQUE,
+    expiration_date DATETIME,
+    activation_date DATETIME DEFAULT CURRENT_TIMESTAMP,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(app_id, email, device_id),
+    FOREIGN KEY(app_id) REFERENCES apps(id)
+  )`);
 
-  // Crea tabella per API keys
-  db.run(`
-    CREATE TABLE IF NOT EXISTS api_keys (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      key TEXT UNIQUE NOT NULL,
-      name TEXT,
-      is_active BOOLEAN DEFAULT 1,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      last_used DATETIME
-    )
-  `);
+  // Tabella coupon - codici univoci per attivare licenze
+  db.run(`CREATE TABLE IF NOT EXISTS license_coupons (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    app_id INTEGER NOT NULL,
+    coupon_code TEXT UNIQUE NOT NULL,
+    is_used BOOLEAN DEFAULT 0,
+    used_by_email TEXT,
+    used_at DATETIME,
+    days_valid INTEGER DEFAULT 365,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY(app_id) REFERENCES apps(id)
+  )`);
+
+  // Tabella API keys
+  db.run(`CREATE TABLE IF NOT EXISTS api_keys (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    key TEXT UNIQUE NOT NULL,
+    name TEXT,
+    is_active BOOLEAN DEFAULT 1,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    last_used DATETIME
+  )`);
 
 } catch (err) {
   console.error('Database init error:', err);
@@ -147,7 +147,6 @@ async function validateApiKey(req, res, next) {
         });
       }
 
-      // Update last_used timestamp
       db.run(
         'UPDATE api_keys SET last_used = CURRENT_TIMESTAMP WHERE id = ?',
         [row.id]
@@ -159,10 +158,78 @@ async function validateApiKey(req, res, next) {
   );
 }
 
-// POST /api/android/verify - Verify license and get JWT token
+// POST /api/android/redeem-coupon - Redeem coupon code
+app.post('/api/android/redeem-coupon', validateApiKey, (req, res) => {
+  try {
+    const { coupon_code, email, device_id, app_id } = req.body;
+
+    if (!coupon_code || !email || !device_id || !app_id) {
+      return res.status(400).json({
+        success: false,
+        message: 'coupon_code, email, device_id, app_id required'
+      });
+    }
+
+    // Verifica coupon
+    db.get(
+      'SELECT * FROM license_coupons WHERE coupon_code = ? AND app_id = ? AND is_used = 0',
+      [coupon_code, app_id],
+      (err, coupon) => {
+        if (err || !coupon) {
+          return res.status(401).json({
+            success: false,
+            message: 'Coupon non valido o già utilizzato'
+          });
+        }
+
+        const expirationDate = new Date();
+        expirationDate.setDate(expirationDate.getDate() + coupon.days_valid);
+        const licenseKey = 'LIC-' + crypto.randomBytes(12).toString('hex').toUpperCase();
+
+        // Attiva licenza
+        db.run(
+          `INSERT OR REPLACE INTO android_licenses (app_id, email, device_id, is_premium, license_key, expiration_date)
+           VALUES (?, ?, ?, ?, ?, ?)`,
+          [app_id, email, device_id, 1, licenseKey, expirationDate.toISOString()],
+          (err) => {
+            if (err) {
+              console.error('License activation error:', err);
+              return res.status(500).json({
+                success: false,
+                message: 'Internal server error'
+              });
+            }
+
+            // Marca coupon come usato
+            db.run(
+              'UPDATE license_coupons SET is_used = 1, used_by_email = ?, used_at = CURRENT_TIMESTAMP WHERE id = ?',
+              [email, coupon.id]
+            );
+
+            res.json({
+              success: true,
+              message: 'Licenza attivata con coupon',
+              license_key: licenseKey,
+              expiration_date: expirationDate.toISOString(),
+              app_id: app_id
+            });
+          }
+        );
+      }
+    );
+  } catch (error) {
+    console.error('Coupon redemption error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Internal server error'
+    });
+  }
+});
+
+// POST /api/android/verify - Verify license per app specifica
 app.post('/api/android/verify', validateApiKey, (req, res) => {
   try {
-    const { email, device_id } = req.body;
+    const { email, device_id, app_id } = req.body;
 
     if (!email || typeof email !== 'string' || !email.includes('@')) {
       return res.status(400).json({
@@ -178,10 +245,17 @@ app.post('/api/android/verify', validateApiKey, (req, res) => {
       });
     }
 
-    // Check or create license record
+    if (!app_id) {
+      return res.status(400).json({
+        success: false,
+        message: 'app_id required'
+      });
+    }
+
+    // Verifica licenza per app specifica
     db.get(
-      'SELECT * FROM android_licenses WHERE email = ? AND device_id = ?',
-      [email, device_id],
+      'SELECT * FROM android_licenses WHERE app_id = ? AND email = ? AND device_id = ?',
+      [app_id, email, device_id],
       (err, row) => {
         if (err) {
           console.error('License query error:', err);
@@ -191,11 +265,11 @@ app.post('/api/android/verify', validateApiKey, (req, res) => {
           });
         }
 
-        // If no record, create one (non-premium)
+        // Se non esiste, crea record (non-premium)
         if (!row) {
           db.run(
-            'INSERT INTO android_licenses (email, device_id, is_premium) VALUES (?, ?, ?)',
-            [email, device_id, 0],
+            'INSERT INTO android_licenses (app_id, email, device_id, is_premium) VALUES (?, ?, ?, ?)',
+            [app_id, email, device_id, 0],
             (err) => {
               if (err) {
                 console.error('Insert error:', err);
@@ -207,7 +281,7 @@ app.post('/api/android/verify', validateApiKey, (req, res) => {
 
               return res.status(401).json({
                 success: false,
-                message: 'No license found for this user',
+                message: 'No license found for this app',
                 is_premium: false,
                 token: null
               });
@@ -216,16 +290,17 @@ app.post('/api/android/verify', validateApiKey, (req, res) => {
           return;
         }
 
-        // Check if premium and not expired
+        // Se non premium
         if (!row.is_premium) {
           return res.json({
             success: false,
-            message: 'User is not premium',
+            message: 'User is not premium for this app',
             is_premium: false,
             token: null
           });
         }
 
+        // Se scaduta
         if (row.expiration_date && new Date(row.expiration_date) < new Date()) {
           return res.json({
             success: false,
@@ -236,10 +311,11 @@ app.post('/api/android/verify', validateApiKey, (req, res) => {
           });
         }
 
-        // Generate JWT token
+        // Genera token
         const token = jwt.sign({
           email: email,
           device_id: device_id,
+          app_id: app_id,
           is_premium: true,
           license_id: row.id,
           expiration_date: row.expiration_date
@@ -254,7 +330,8 @@ app.post('/api/android/verify', validateApiKey, (req, res) => {
           is_premium: true,
           token: token,
           expiration_date: row.expiration_date,
-          activation_date: row.activation_date
+          activation_date: row.activation_date,
+          app_id: app_id
         });
       }
     );
@@ -267,7 +344,7 @@ app.post('/api/android/verify', validateApiKey, (req, res) => {
   }
 });
 
-// POST /api/android/validate-token - Validate JWT token
+// POST /api/android/validate-token
 app.post('/api/android/validate-token', (req, res) => {
   try {
     const { token } = req.body;
@@ -289,6 +366,7 @@ app.post('/api/android/validate-token', (req, res) => {
         message: 'Token is valid',
         is_premium: decoded.is_premium,
         email: decoded.email,
+        app_id: decoded.app_id,
         exp: decoded.exp
       });
     } catch (error) {
@@ -306,15 +384,107 @@ app.post('/api/android/validate-token', (req, res) => {
   }
 });
 
-// POST /api/android/admin/activate-license - Activate premium license
+// GET /api/android/licenses - Get all licenses per app (Admin)
+app.get('/api/android/licenses', (req, res) => {
+  const { username, isAdmin } = req.query;
+
+  if (username !== ADMIN_USERNAME || isAdmin !== 'true') {
+    res.status(403).json({ error: 'Accesso negato' });
+    return;
+  }
+
+  db.all(
+    `SELECT al.id, al.app_id, a.name as app_name, al.email, al.device_id, al.is_premium, 
+     al.license_key, al.expiration_date, al.activation_date 
+     FROM android_licenses al 
+     LEFT JOIN apps a ON al.app_id = a.id 
+     ORDER BY al.created_at DESC`,
+    (err, rows) => {
+      if (err) {
+        console.error('Query licenses error:', err);
+        res.status(500).json({ error: err.message });
+        return;
+      }
+      res.json(rows || []);
+    }
+  );
+});
+
+// GET /api/android/coupons - Get all coupons (Admin)
+app.get('/api/android/coupons', (req, res) => {
+  const { username, isAdmin } = req.query;
+
+  if (username !== ADMIN_USERNAME || isAdmin !== 'true') {
+    res.status(403).json({ error: 'Accesso negato' });
+    return;
+  }
+
+  db.all(
+    `SELECT lc.id, lc.app_id, a.name as app_name, lc.coupon_code, lc.is_used, 
+     lc.used_by_email, lc.used_at, lc.days_valid, lc.created_at 
+     FROM license_coupons lc 
+     LEFT JOIN apps a ON lc.app_id = a.id 
+     ORDER BY lc.created_at DESC`,
+    (err, rows) => {
+      if (err) {
+        console.error('Query coupons error:', err);
+        res.status(500).json({ error: err.message });
+        return;
+      }
+      res.json(rows || []);
+    }
+  );
+});
+
+// POST /api/admin/generate-coupons - Generate coupon codes (Admin)
+app.post('/api/admin/generate-coupons', (req, res) => {
+  const { username, isAdmin } = req.query;
+
+  if (username !== ADMIN_USERNAME || isAdmin !== 'true') {
+    res.status(403).json({ error: 'Accesso negato' });
+    return;
+  }
+
+  const { app_id, count = 1, days_valid = 365 } = req.body;
+
+  if (!app_id || count < 1) {
+    res.status(400).json({ error: 'app_id e count obbligatori' });
+    return;
+  }
+
+  const coupons = [];
+  let inserted = 0;
+
+  for (let i = 0; i < count; i++) {
+    const couponCode = 'COUPON-' + crypto.randomBytes(6).toString('hex').toUpperCase();
+    coupons.push(couponCode);
+
+    db.run(
+      'INSERT INTO license_coupons (app_id, coupon_code, days_valid) VALUES (?, ?, ?)',
+      [app_id, couponCode, days_valid],
+      (err) => {
+        inserted++;
+        if (inserted === count) {
+          res.json({
+            success: true,
+            message: `${count} couponi generati`,
+            coupons: coupons
+          });
+        }
+      }
+    );
+  }
+});
+
+// POST /api/android/admin/activate-license - Activate license manually (Admin)
 app.post('/api/android/admin/activate-license', validateApiKey, (req, res) => {
   try {
-    const { email, device_id, days_valid = 365 } = req.body;
+    const { app_id, email, device_id, days_valid = 365 } = req.body;
 
-    if (!email || !device_id) {
+    if (!app_id || !email || !device_id) {
       return res.status(400).json({
         success: false,
-        message: 'Email and device_id required'
+        message: 'app_id, email and device_id required'
       });
     }
 
@@ -323,9 +493,9 @@ app.post('/api/android/admin/activate-license', validateApiKey, (req, res) => {
     const licenseKey = 'LIC-' + crypto.randomBytes(12).toString('hex').toUpperCase();
 
     db.run(
-      `INSERT OR REPLACE INTO android_licenses (email, device_id, is_premium, license_key, expiration_date, activation_date)
-       VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
-      [email, device_id, 1, licenseKey, expirationDate.toISOString()],
+      `INSERT OR REPLACE INTO android_licenses (app_id, email, device_id, is_premium, license_key, expiration_date, activation_date)
+       VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
+      [app_id, email, device_id, 1, licenseKey, expirationDate.toISOString()],
       function(err) {
         if (err) {
           console.error('Activation error:', err);
@@ -339,7 +509,8 @@ app.post('/api/android/admin/activate-license', validateApiKey, (req, res) => {
           success: true,
           message: 'License activated',
           license_key: licenseKey,
-          expiration_date: expirationDate.toISOString()
+          expiration_date: expirationDate.toISOString(),
+          app_id: app_id
         });
       }
     );
@@ -352,29 +523,7 @@ app.post('/api/android/admin/activate-license', validateApiKey, (req, res) => {
   }
 });
 
-// GET /api/android/licenses - Get all Android licenses (Admin)
-app.get('/api/android/licenses', (req, res) => {
-  const { username, isAdmin } = req.query;
-
-  if (username !== ADMIN_USERNAME || isAdmin !== 'true') {
-    res.status(403).json({ error: 'Accesso negato' });
-    return;
-  }
-
-  db.all(
-    'SELECT id, email, device_id, is_premium, license_key, expiration_date, activation_date FROM android_licenses ORDER BY created_at DESC',
-    (err, rows) => {
-      if (err) {
-        console.error('Query licenses error:', err);
-        res.status(500).json({ error: err.message });
-        return;
-      }
-      res.json(rows || []);
-    }
-  );
-});
-
-// POST /api/android/admin/revoke-license - Revoke license
+// POST /api/android/admin/revoke-license - Revoke license (Admin)
 app.post('/api/android/admin/revoke-license', (req, res) => {
   const { username, isAdmin } = req.query;
 
@@ -383,16 +532,16 @@ app.post('/api/android/admin/revoke-license', (req, res) => {
     return;
   }
 
-  const { email, device_id } = req.body;
+  const { app_id, email, device_id } = req.body;
 
-  if (!email || !device_id) {
-    res.status(400).json({ error: 'Email e device_id obbligatori' });
+  if (!app_id || !email || !device_id) {
+    res.status(400).json({ error: 'app_id, email e device_id obbligatori' });
     return;
   }
 
   db.run(
-    'UPDATE android_licenses SET is_premium = 0, updated_at = CURRENT_TIMESTAMP WHERE email = ? AND device_id = ?',
-    [email, device_id],
+    'UPDATE android_licenses SET is_premium = 0, updated_at = CURRENT_TIMESTAMP WHERE app_id = ? AND email = ? AND device_id = ?',
+    [app_id, email, device_id],
     function(err) {
       if (err) {
         console.error('Revoke error:', err);
@@ -445,7 +594,6 @@ app.post('/api/auth/signup', (req, res) => {
           }
           return;
         }
-        console.log('Nuovo utente registrato:', username);
         res.json({ id: this.lastID, message: 'Registrazione completata! Effettua il login.' });
       }
     );
@@ -464,10 +612,8 @@ app.post('/api/auth/login', (req, res) => {
       return;
     }
 
-    // Controlla se è admin
     if (username === ADMIN_USERNAME && password === ADMIN_PASSWORD) {
       const token = crypto.randomBytes(32).toString('hex');
-      console.log('Admin login successful');
       res.json({ 
         id: 0, 
         username: ADMIN_USERNAME, 
@@ -497,7 +643,6 @@ app.post('/api/auth/login', (req, res) => {
         }
 
         const token = crypto.randomBytes(32).toString('hex');
-        console.log('Login successful:', username);
         res.json({ 
           id: row.id, 
           username: row.username, 
@@ -566,7 +711,6 @@ app.post('/api/admin/reset-password', (req, res) => {
         return;
       }
 
-      console.log('Password resettata per utente ID:', userId);
       res.json({ 
         message: `Password resettata a: ${DEFAULT_PASSWORD}`,
         newPassword: DEFAULT_PASSWORD
@@ -713,7 +857,6 @@ app.post('/api/feedback', (req, res) => {
 // Static files
 app.use(express.static('public'));
 
-// Root route
 app.get('/', (req, res) => {
   try {
     res.sendFile(path.join(__dirname, 'public', 'index.html'));
@@ -723,18 +866,15 @@ app.get('/', (req, res) => {
   }
 });
 
-// Health check
 app.get('/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
-// 404 handler
 app.use((req, res) => {
   console.log('404 Not Found:', req.method, req.path);
   res.status(404).json({ error: 'Not Found' });
 });
 
-// Error handler
 app.use((err, req, res, next) => {
   console.error('Unhandled error:', err);
   res.status(500).json({ error: 'Errore interno del server' });
