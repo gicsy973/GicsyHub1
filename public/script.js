@@ -1,11 +1,44 @@
 let currentUser = null;
 
+// ===== LOCAL STORAGE FUNCTIONS =====
+
+function saveUserToStorage(user) {
+  let users = JSON.parse(localStorage.getItem('gicsyhub_users') || '[]');
+  const existingIndex = users.findIndex(u => u.username === user.username);
+  if (existingIndex >= 0) {
+    users[existingIndex] = user;
+  } else {
+    users.push(user);
+  }
+  localStorage.setItem('gicsyhub_users', JSON.stringify(users));
+}
+
+function getAllUsersFromStorage() {
+  return JSON.parse(localStorage.getItem('gicsyhub_users') || '[]');
+}
+
+function saveFeedbackToStorage(feedback) {
+  let feedbacks = JSON.parse(localStorage.getItem('gicsyhub_feedbacks') || '[]');
+  feedback.id = Date.now();
+  feedback.timestamp = new Date().toISOString();
+  feedbacks.push(feedback);
+  localStorage.setItem('gicsyhub_feedbacks', JSON.stringify(feedbacks));
+  return feedback;
+}
+
+function getAllFeedbackFromStorage() {
+  return JSON.parse(localStorage.getItem('gicsyhub_feedbacks') || '[]');
+}
+
+// ===== DOM READY =====
+
 document.addEventListener('DOMContentLoaded', () => {
   loadApps();
   loadFeedback();
   checkAuth();
   setupEventListeners();
   loadAppsForSelects();
+  displayStorageStats();
 });
 
 function setupEventListeners() {
@@ -44,6 +77,7 @@ async function handleLogin(e) {
     if (response.ok) {
       currentUser = data;
       localStorage.setItem('user', JSON.stringify(data));
+      saveUserToStorage(data);
       updateAuthUI();
       showSection('home');
       document.getElementById('login-form').reset();
@@ -76,6 +110,8 @@ async function handleSignup(e) {
 
     if (response.ok) {
       if (errorDiv) errorDiv.textContent = '';
+      const newUser = { username, email, isNewUser: true };
+      saveUserToStorage(newUser);
       alert('Registrazione completata! Effettua il login.');
       document.getElementById('signup-form').reset();
       showSection('login');
@@ -133,6 +169,14 @@ function updateAuthUI() {
     if (addButton) addButton.style.display = 'none';
     if (adminLink) adminLink.style.display = 'none';
   }
+}
+
+// ===== STORAGE STATS =====
+
+function displayStorageStats() {
+  const users = getAllUsersFromStorage();
+  const feedbacks = getAllFeedbackFromStorage();
+  console.log(`📱 Memoria locale - Utenti salvati: ${users.length}, Recensioni: ${feedbacks.length}`);
 }
 
 // ===== LOAD APPS FOR SELECTS =====
@@ -700,8 +744,10 @@ async function handleFeedback(e) {
     });
 
     if (response.ok) {
+      const savedFeedback = saveFeedbackToStorage(feedbackData);
+      
       if (statusDiv) {
-        statusDiv.textContent = '✓ Feedback inviato con successo! Grazie!';
+        statusDiv.textContent = '✓ Feedback inviato e salvato localmente! Grazie!';
         statusDiv.classList.add('success');
         statusDiv.classList.remove('error');
       }
@@ -729,11 +775,14 @@ async function handleFeedback(e) {
     }
   } catch (error) {
     console.error('Errore:', error);
+    saveFeedbackToStorage(feedbackData);
     if (statusDiv) {
-      statusDiv.textContent = '✗ Errore di connessione';
-      statusDiv.classList.add('error');
-      statusDiv.classList.remove('success');
+      statusDiv.textContent = '✓ Feedback salvato localmente (errore di connessione)';
+      statusDiv.classList.add('success');
+      statusDiv.classList.remove('error');
     }
+    document.getElementById('feedback-form').reset();
+    loadFeedback();
   }
 }
 
@@ -741,9 +790,17 @@ async function loadFeedback() {
   try {
     const response = await fetch('/api/feedback');
     const feedbacks = await response.json();
-    renderFeedback(feedbacks);
+    
+    const localFeedbacks = getAllFeedbackFromStorage();
+    const allFeedbacks = [...feedbacks, ...localFeedbacks].sort((a, b) => 
+      new Date(b.createdAt || b.timestamp) - new Date(a.createdAt || a.timestamp)
+    );
+    
+    renderFeedback(allFeedbacks);
   } catch (error) {
     console.error('Errore nel caricamento feedback:', error);
+    const localFeedbacks = getAllFeedbackFromStorage();
+    renderFeedback(localFeedbacks);
   }
 }
 
@@ -762,8 +819,8 @@ function renderFeedback(feedbacks) {
     const item = document.createElement('div');
     item.className = 'feedback-item';
     
-    const date = new Date(feedback.createdAt);
-    const dateStr = date.toLocaleDateString('it-IT', { 
+    const dateObj = new Date(feedback.createdAt || feedback.timestamp);
+    const dateStr = dateObj.toLocaleDateString('it-IT', { 
       year: 'numeric', 
       month: 'short', 
       day: 'numeric',
@@ -771,8 +828,10 @@ function renderFeedback(feedbacks) {
       minute: '2-digit'
     });
     
+    const localTag = !feedback.createdAt ? ' 💾 (locale)' : '';
+    
     item.innerHTML = `
-      <div class="feedback-item-name">${feedback.name}</div>
+      <div class="feedback-item-name">${feedback.name}${localTag}</div>
       <div class="feedback-item-message">${feedback.message}</div>
       <div class="feedback-item-date">${dateStr}</div>
     `;
